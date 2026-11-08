@@ -1,0 +1,55 @@
+name: prueba-tecnica
+
+services:
+  postgresql:
+    image: postgres:17
+    container_name: postgresql
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+      # La base erco y sus usuarios los crea sql/erco.sql
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow:
+    image: apache/airflow:3.4.0
+    container_name: airflow
+    restart: unless-stopped
+    command: standalone
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    environment:
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      # Usuario de la interfaz web: admin / admin (contraseña en passwords.json)
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_USERS: "admin:admin"
+      AIRFLOW__CORE__SIMPLE_AUTH_MANAGER_PASSWORDS_FILE: /opt/airflow/passwords.json
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./data:/opt/airflow/data:ro
+      - ./passwords.json:/opt/airflow/passwords.json
+
+  api:
+    build: ./api
+    container_name: api
+    restart: unless-stopped
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      # La API solo lee: usa erco_lectura, que solo tiene acceso a las vistas vw_*
+      DATABASE_URL: postgresql://erco_lectura:erco_lectura@postgresql:5432/erco
+
+volumes:
+  postgres_data:
